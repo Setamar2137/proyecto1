@@ -1,0 +1,246 @@
+# Importación de bibliotecas 
+from dash import Dash, html, dcc, Input, Output, State
+import dash_bootstrap_components as dbc
+import plotly.express as px
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score
+
+# Cargar datos actualizados
+data = pd.read_csv('datosfinales.csv') 
+
+# Modelo 1: Con visibility
+X1 = data.loc[:, ['Hour', 'Temperature(C)', 'Visibility (10m)', 'Solar Radiation (MJ/m2)',
+                  'es__Autumn', 'es__Spring', 'es__Summer', 'es__Winter', 'es__Holiday', 'es__No Holiday']]
+y1 = data.loc[:, 'Rented Bike Count']
+
+# Crear el modelo de regresión lineal con visibility
+lr1 = LinearRegression()
+scores1 = cross_val_score(lr1, X1, y1, cv=5, scoring='r2')  # Validación cruzada
+lr1.fit(X1, y1)  # Entrenar el modelo
+
+# Modelo 2: Sin visibility
+X2 = data.loc[:, ['Hour', 'Temperature(C)', 'Solar Radiation (MJ/m2)',
+                  'es__Autumn', 'es__Spring', 'es__Summer', 'es__Winter', 'es__Holiday', 'es__No Holiday']]
+y2 = data.loc[:, 'Rented Bike Count']
+
+# Crear el modelo de regresión lineal sin visibility
+lr2 = LinearRegression()
+scores2 = cross_val_score(lr2, X2, y2, cv=5, scoring='r2')  # Validación cruzada
+lr2.fit(X2, y2)  # Entrenar el modelo
+
+# Modelo 3: Sin visibility y sin dummies de holiday
+X3 = data.loc[:, ['Hour', 'Temperature(C)', 'Solar Radiation (MJ/m2)',
+                  'es__Autumn', 'es__Spring', 'es__Summer', 'es__Winter']]
+y3 = data.loc[:, 'Rented Bike Count']
+
+# Crear el modelo de regresión lineal sin visibility y sin holiday dummies
+lr3 = LinearRegression()
+scores3 = cross_val_score(lr3, X3, y3, cv=5, scoring='r2')  # Validación cruzada
+lr3.fit(X3, y3)  # Entrenar el modelo
+
+# Inicializar la aplicación Dash
+app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
+# Definición del Layout del Tablero
+app.layout = dbc.Container([
+    # Sección de Visualización de Datos
+    dbc.Row([
+        dbc.Col([
+            html.H3("Tablero de Análisis de Uso de Bicicletas Compartidas para Área de Producción", style={'textAlign': 'center'}),
+            html.Label('Seleccione Fecha'),
+            dcc.DatePickerSingle(
+                id='fecha-seleccion',
+                min_date_allowed=data['Date'].min(),
+                max_date_allowed=data['Date'].max(),
+                initial_visible_month=data['Date'].min(),
+                date=data['Date'].min()
+            ),
+            html.Div([
+                html.Div([
+                    dcc.Graph(id='grafico-uso-bicicletas')
+                ], style={'backgroundColor': '#f0f8ff', 'padding': '10px', 'marginBottom': '20px'}),  # Fondo color azul claro
+
+                html.Div([
+                    dcc.Graph(id='grafico-temperatura-uso')
+                ], style={'backgroundColor': '#faebd7', 'padding': '10px', 'marginBottom': '20px'}),  # Fondo color beige
+
+                # Inputs y gráfico de comparación de días funcionales
+                html.Label('Seleccione si es un Día Festivo'),
+                dcc.RadioItems(id='funcional-seleccion', 
+                               options=[
+                                   {'label': 'Sí', 'value': 'es__Holiday'},
+                                   {'label': 'No', 'value': 'es__No Holiday'}
+                               ], 
+                               value='es__Holiday', 
+                               labelStyle={'display': 'inline-block'}, 
+                               inline=True),
+                html.Div([
+                    dcc.Graph(id='grafico-funcional-no-funcional')
+                ], style={'backgroundColor': '#e6e6fa', 'padding': '10px', 'marginBottom': '20px'}),  # Fondo color lavanda
+
+                # Inputs y gráfico de Mapa de Calor
+                html.Label('Seleccione la Estación'),
+                dcc.Dropdown(id='estacion-seleccion', 
+                             options=[
+                                 {'label': 'Primavera', 'value': 'Spring'},
+                                 {'label': 'Verano', 'value': 'Summer'},
+                                 {'label': 'Otoño', 'value': 'Autumn'},
+                                 {'label': 'Invierno', 'value': 'Winter'}
+                             ], 
+                             placeholder='Seleccione la Estación'),
+                html.Div([
+                    dcc.Graph(id='mapa-calor-estaciones')
+                ], style={'backgroundColor': '#fffacd', 'padding': '10px', 'marginBottom': '20px'}),  # Fondo color amarillo claro
+
+                html.Div([
+                    dcc.Graph(id='grafico-barras')
+                ], style={'backgroundColor': '#f5f5f5', 'padding': '10px'})  # Fondo color gris claro
+            ]),
+        ], width=12)
+    ], style={'marginBottom': 50}),
+    
+    # Sección de Predicción de Demanda
+    dbc.Row([
+        dbc.Col([
+            html.H4("Modelo Predictivo de Demanda de Bicicletas", style={'textAlign': 'center'}),
+            html.Label('Seleccione la Hora'),
+            dcc.Slider(id='hora-seleccion', min=0, max=23, step=1, value=12, marks={i: str(i) for i in range(24)}),
+            html.Label('Temperatura (°C)'),
+            dcc.Slider(id='temp-input', min=-10, max=40, step=0.5, value=20, marks={i: f'{i}°C' for i in range(-10, 41, 5)}),
+            html.Label('Radiación Solar (MJ/m²)'),
+            dcc.Slider(id='radiacion-input', min=0, max=3, step=0.1, value=0.5, marks={i: str(i) for i in range(4)}),
+            html.Label('Seleccione la Visibilidad (10m)'),
+            dcc.Slider(id='visibilidad-input', min=0, max=2000, step=100, value=1000, marks={i: str(i) for i in range(0, 2001, 500)}),
+            html.Label('Seleccione la Estación'),
+            dcc.Dropdown(id='estacion-seleccion-prediccion', 
+                         options=[
+                             {'label': 'Primavera', 'value': 'Spring'},
+                             {'label': 'Verano', 'value': 'Summer'},
+                             {'label': 'Otoño', 'value': 'Autumn'},
+                             {'label': 'Invierno', 'value': 'Winter'}
+                         ], 
+                         placeholder='Seleccione la Estación'),
+            html.Label('Es un Día Festivo?'),
+            dcc.RadioItems(id='festivo-seleccion-prediccion', 
+                           options=[
+                               {'label': 'Sí', 'value': 'es__Holiday'},
+                               {'label': 'No', 'value': 'es__No Holiday'}
+                           ], 
+                           labelStyle={'display': 'inline-block'}, 
+                           inline=True),
+            html.Label('Seleccione el Modelo de Predicción'),
+            dcc.RadioItems(id='modelo-seleccion', 
+                           options=[
+                               {'label': 'Con Visibilidad', 'value': 'con_visibilidad'},
+                               {'label': 'Sin Visibilidad', 'value': 'sin_visibilidad'},
+                               {'label': 'Sin Visibilidad y Sin Festivos', 'value': 'sin_visibilidad_sin_festivos'}
+                           ], 
+                           value='con_visibilidad',
+                           labelStyle={'display': 'inline-block'}, 
+                           inline=True),
+            html.Button('Predecir Demanda', id='boton-prediccion', n_clicks=0, className='btn btn-primary', style={'marginTop': 10}),
+            html.Div(id='resultado-prediccion', style={'marginTop': 20})
+        ], width=12)
+    ])
+])
+
+# Definición de callbacks para actualizar los gráficos y la predicción
+@app.callback(
+    Output('grafico-uso-bicicletas', 'figure'),
+    Input('fecha-seleccion', 'date')
+)
+def actualizar_grafico_uso_bicicletas(fecha):
+    df_filtrado = data[data['Date'] == fecha]
+    fig = px.line(df_filtrado, x='Hour', y='Rented Bike Count', title='Uso de Bicicletas por Hora del Día')
+    return fig
+
+@app.callback(
+    Output('grafico-temperatura-uso', 'figure'),
+    Input('fecha-seleccion', 'date')
+)
+def actualizar_grafico_temperatura_uso(fecha):
+    df_filtrado = data[data['Date'] == fecha]
+    fig = px.scatter(df_filtrado, x='Temperature(C)', y='Rented Bike Count', title
+                     ='Impacto de la Temperatura en el Uso de Bicicletas')
+    return fig
+
+
+@app.callback(
+    Output('grafico-funcional-no-funcional', 'figure'),
+    Input('funcional-seleccion', 'value')
+)
+def actualizar_grafico_funcional(funcional):
+    df_filtrado = data[data[funcional] == 1]
+    fig = px.bar(df_filtrado, x='Hour', y='Rented Bike Count', color=funcional, barmode='group', 
+                 title='Comparación de Uso: Día Festivo vs No Festivo')
+    return fig
+
+@app.callback(
+    Output('mapa-calor-estaciones', 'figure'),
+    Input('estacion-seleccion', 'value')
+)
+def actualizar_mapa_calor(estacion):
+    # Verificar si se ha seleccionado una estación
+    if estacion and f'es__{estacion}' in data.columns:
+        df_filtrado = data[data[f'es__{estacion}'] == 1]
+        fig = px.density_heatmap(df_filtrado, x='Hour', y='Date', z='Rented Bike Count', 
+                                 title=f'Mapa de Calor del Uso por {estacion}',
+                                 nbinsx=24, nbinsy=30)
+    else:
+        # Mostrar un gráfico vacío o un mensaje en caso de que no se seleccione una estación
+        fig = px.density_heatmap(pd.DataFrame({'Hour': [], 'Date': [], 'Rented Bike Count': []}), 
+                                 x='Hour', y='Date', z='Rented Bike Count',
+                                 title='Seleccione una estación para ver el uso por estación')
+    return fig
+
+@app.callback(
+    Output('grafico-barras', 'figure'),
+    Input('fecha-seleccion', 'date')
+)
+def actualizar_grafico_barras(fecha):
+    df_filtrado = data[data['Date'] == fecha]
+    fig = px.bar(df_filtrado, x='Hour', y='Rented Bike Count', title='Bicicletas Rentadas por Hora')
+    return fig
+
+@app.callback(
+    Output('resultado-prediccion', 'children'),
+    Input('boton-prediccion', 'n_clicks'),
+    State('hora-seleccion', 'value'),
+    State('temp-input', 'value'),
+    State('radiacion-input', 'value'),
+    State('visibilidad-input', 'value'),
+    State('estacion-seleccion-prediccion', 'value'),
+    State('festivo-seleccion-prediccion', 'value'),
+    State('modelo-seleccion', 'value')
+)
+def predecir_demanda(n_clicks, hora, temp, radiacion, visibilidad, estacion, festivo, modelo_seleccion):
+    if n_clicks > 0:
+        # Preparar las entradas para el modelo de regresión
+        estaciones = ['es__Autumn', 'es__Spring', 'es__Summer', 'es__Winter']
+        est_dummies = [1 if f'es__{estacion}' == est else 0 for est in estaciones]
+        holiday_dummies = [1, 0] if festivo == 'es__Holiday' else [0, 1]
+        
+        if modelo_seleccion == 'con_visibilidad':
+            # Modelo con visibility
+            entrada_modelo = np.array([[hora, temp, visibilidad, radiacion] + est_dummies + holiday_dummies])
+            prediccion = lr1.predict(entrada_modelo)
+        elif modelo_seleccion == 'sin_visibilidad':
+            # Modelo sin visibility
+            entrada_modelo = np.array([[hora, temp, radiacion] + est_dummies + holiday_dummies])
+            prediccion = lr2.predict(entrada_modelo)
+        else:
+            # Modelo sin visibility y sin holiday dummies
+            entrada_modelo = np.array([[hora, temp, radiacion] + est_dummies])
+            prediccion = lr3.predict(entrada_modelo)
+
+        # Asegurar que la predicción no sea negativa
+        prediccion_final = max(0, int(prediccion[0]))
+
+        return f"La demanda prevista de bicicletas es: {prediccion_final} bicicletas."
+    return ""
+
+# Ejecutar la aplicación
+if __name__ == '__main__':
+    app.run_server(debug=True)
